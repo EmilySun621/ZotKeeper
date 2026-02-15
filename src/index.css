@@ -1,0 +1,40 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --theme-card-bg: #fff;
+  --theme-card-shadow: 0 4px 14px -2px rgba(217, 119, 6, 0.12);
+  --theme-text: #292524;
+}
+
+body {
+  background-color: #fefbf6;
+  color: #292524;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Save button micro-interaction */
+@keyframes heart-pop {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.2); }
+  100% { transform: scale(1); }
+}
+.heart-pop {
+  animation: heart-pop 0.3s ease;
+}
+
+.app-bg {
+  background: linear-gradient(135deg, #fefbf6 0%, #fdf6eb 30%, #fef3e2 60%, #fef7ed 100%);
+  min-height: 100vh;
+}
+
+/* Horizontal scroll sections: hide scrollbar but keep scroll */
+.mood-scroll {
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.mood-scroll::-webkit-scrollbar {
+  display: none;
+}
