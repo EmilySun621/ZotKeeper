@@ -23,7 +23,7 @@ export default function SearchPage() {
   const [keyword, setKeyword] = useState('')
   const [filters, setFilters] = useState(defaultFilters)
   const { preferences } = usePreferences()
-  const { results, loading, error } = useSearchRecipes(keyword, filters)
+  const { results, suggestedKeyword, loading, error } = useSearchRecipes(keyword, filters)
 
   const hasSearched = keyword.trim().length > 0
 
@@ -54,7 +54,7 @@ export default function SearchPage() {
               <p className="font-semibold text-red-800">Search failed</p>
               <p className="mt-2 text-sm text-red-700">{error}</p>
               <p className="mt-3 text-xs text-stone-500">
-                Check your connection. In dev, the app uses a CORS proxy to reach TheMealDB.
+                Make sure the recipe backend is running (e.g. uvicorn scripts.serve_recipes:app --port 8000).
               </p>
             </div>
           )}
@@ -62,7 +62,7 @@ export default function SearchPage() {
           {!error && loading && (
             <div className="flex flex-col items-center justify-center py-16">
               <div className="h-10 w-10 animate-spin rounded-full border-2 border-tomato-500 border-t-transparent" />
-              <p className="mt-4 text-sm text-stone-500">Searching TheMealDB…</p>
+              <p className="mt-4 text-sm text-stone-500">Searching…</p>
             </div>
           )}
 
@@ -97,7 +97,12 @@ export default function SearchPage() {
           {!error && !loading && hasSearched && results.length > 0 && (
             <>
               <p className="mb-4 text-sm text-stone-500">
-                {results.length} result{results.length !== 1 ? 's' : ''} from TheMealDB
+                {results.length} result{results.length !== 1 ? 's' : ''}
+                {suggestedKeyword && suggestedKeyword !== keyword.trim() && (
+                  <span className="ml-2 text-stone-400">
+                    (showing results for “{suggestedKeyword}”)
+                  </span>
+                )}
               </p>
               <SearchResults recipes={results} />
             </>

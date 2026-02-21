@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import { useSavedRecipes } from '../../hooks/useSavedRecipes'
-import { handleImageError } from '../../utils/imageFallback'
+import { FALLBACK_IMAGE, handleImageError } from '../../utils/imageFallback'
 
 function Tag({ children }) {
   return (
@@ -29,7 +29,7 @@ export default function FeedCard({ recipe }) {
       {/* Big image */}
       <div className="relative aspect-[4/3] overflow-hidden bg-stone-100">
         <img
-          src={recipe.image}
+          src={recipe.image || FALLBACK_IMAGE}
           alt=""
           className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
           onError={handleImageError}

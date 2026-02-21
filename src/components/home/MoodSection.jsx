@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { handleImageError } from '../../utils/imageFallback'
+import { FALLBACK_IMAGE, handleImageError } from '../../utils/imageFallback'
 
 /**
  * One horizontal-scroll row: mood label + cards (large image, short poetic title).
@@ -22,7 +22,7 @@ export default function MoodSection({ title, emoji, recipes }) {
           >
             <div className="aspect-[4/5] w-[200px] overflow-hidden sm:w-[220px]">
               <img
-                src={recipe.image}
+                src={recipe.image || FALLBACK_IMAGE}
                 alt=""
                 className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
                 onError={handleImageError}

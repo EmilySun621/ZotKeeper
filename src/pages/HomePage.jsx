@@ -10,10 +10,18 @@ export default function HomePage() {
   const moodData = useMemo(() => partitionByMood(recipes), [recipes])
 
   if (error) {
+    const isNetworkError = /failed to fetch|network error|load failed/i.test(error)
     return (
-      <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-center text-stone-700">
+      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-8 text-center text-stone-700">
         <p className="font-medium">Could not load recipes</p>
         <p className="mt-1 text-sm text-stone-600">{error}</p>
+        {isNetworkError && (
+          <p className="mt-4 text-sm text-stone-600">
+            Start the recipe backend: <code className="rounded bg-amber-100 px-1.5 py-0.5 text-xs">uvicorn scripts.serve_recipes:app --port 8000</code>
+            <br />
+            (from project root, after <code className="rounded bg-amber-100 px-1.5 py-0.5 text-xs">pip install fastapi uvicorn</code>)
+          </p>
+        )}
       </div>
     )
   }

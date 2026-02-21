@@ -1,27 +1,26 @@
 #!/usr/bin/env python3
 """
-Convert Epicurious full_format_recipes.json to ZotKeeper frontend schema.
+Read data/raw/recipes.csv and convert to ZotKeeper frontend schema.
+Output: src/data/epicuriousRecipes.json
+
 Usage:
-  python scripts/load_epicurious.py [input_json] [output_json]
-  Default: reads from ../data/full_format_recipes.json or first arg,
-           writes to ../src/data/epicuriousRecipes.json or second arg.
-Place full_format_recipes.json in project (e.g. scripts/ or data/) or pass path.
+  python scripts/load_epicurious.py [output.json] [limit]
+  Default: writes to src/data/epicuriousRecipes.json, limit 500 (set to 0 for no limit).
 """
 
-import json
+import csv
 import re
 import sys
 from pathlib import Path
 
-# Cuisine-like and diet-like keywords from Epicurious categories
+# Cuisine-like and diet-like keywords from RecipeCategory / Keywords
 CUISINE_KEYWORDS = {
     "italian", "french", "mexican", "american", "asian", "indian", "japanese",
     "korean", "thai", "chinese", "mediterranean", "greek", "moroccan", "middle eastern",
-    "vietnamese", "cuban", "spanish", "english", "german", "swiss", "cajun", "creole",
+    "vietnamese", "spanish", "german", "cajun", "creole", "british", "irish",
 }
-DIET_KEYWORDS = {"vegan", "vegetarian", "pescatarian", "dairy free", "gluten-free", "wheat/gluten-free", "kosher", "halal", "paleo"}
+DIET_KEYWORDS = {"vegan", "vegetarian", "pescatarian", "dairy free", "gluten-free", "kosher", "halal", "paleo", "low fat", "healthy"}
 
-# Joke/minimal recipes to exclude from search (e.g. "Salt Water for Boiling")
 SKIP_TITLES_LOWER = {"salt water for boiling", "water", "air", "boiling water"}
 
 
@@ -29,134 +28,177 @@ def slug(s):
     return re.sub(r"[^a-z0-9]+", "-", (s or "").lower()).strip("-") or "r"
 
 
-def infer_cuisine_tags(categories):
-    if not categories:
+def parse_r_list(s):
+    """Parse R-style c("a", "b", "c") or c('a','b') to list of strings."""
+    if not s or not s.strip():
         return []
-    cats_lower = [c.lower() for c in categories]
-    return [c for c in CUISINE_KEYWORDS if c in " ".join(cats_lower)][:3]
-
-
-def infer_diet_tags(categories):
-    if not categories:
-        return []
+    s = s.strip()
+    if s.upper().startswith("C("):
+        s = s[2:-1]  # drop c( and )
     out = []
-    for c in categories:
-        cl = c.lower()
-        for d in DIET_KEYWORDS:
-            if d in cl or cl in d:
-                out.append(d.replace(" ", "-") if " " in d else d)
-    return list(dict.fromkeys(out))[:5]
+    current = []
+    in_quote = None
+    for i, c in enumerate(s):
+        if c in '"\'' and (not in_quote or in_quote == c):
+            if in_quote == c:
+                out.append("".join(current).strip())
+                current = []
+                in_quote = None
+            else:
+                in_quote = c
+        elif in_quote is not None:
+            current.append(c)
+        elif c == "," and not in_quote:
+            if current:
+                out.append("".join(current).strip().strip('"\''))
+                current = []
+    if current:
+        out.append("".join(current).strip().strip('"\''))
+    return [x for x in out if x]
 
 
-def ingredient_line_to_obj(line):
-    line = (line or "").strip()
-    if not line:
+def parse_iso_duration(s):
+    """Parse ISO 8601 duration PT24H, PT45M, PT24H45M to total minutes."""
+    if not s or s == "NA":
         return None
-    # Try "amount name" or just name
-    parts = line.split(None, 1)
-    if len(parts) >= 2 and re.match(r"^[\d/\.\s\-]+$", parts[0]):
-        return {"name": parts[1], "amount": parts[0]}
-    return {"name": line, "amount": ""}
+    total_min = 0
+    h = re.search(r"(\d+)H", s, re.I)
+    m = re.search(r"(\d+)M", s, re.I)
+    if h:
+        total_min += int(h.group(1)) * 60
+    if m:
+        total_min += int(m.group(1))
+    return total_min if total_min else None
 
 
-def map_recipe(raw, idx):
-    title = (raw.get("title") or "").strip() or "Untitled"
-    categories = raw.get("categories") or []
-    ingredients_raw = raw.get("ingredients") or []
-    directions = raw.get("directions") or []
-    rid = f"epi-{idx}-{slug(title)[:30]}"
+def first_image(images_str):
+    """Get first URL from Images column (R list of URLs)."""
+    if not images_str:
+        return None
+    urls = parse_r_list(images_str)
+    for u in urls:
+        u = u.strip().strip('"\'')
+        if u.startswith("http"):
+            return u
+    return None
+
+
+def infer_cuisine_tags(category, keywords_list):
+    combined = (category or "").lower() + " " + " ".join(kw for kw in keywords_list if kw).lower()
+    return [c for c in CUISINE_KEYWORDS if c in combined][:3]
+
+
+def infer_diet_tags(keywords_list):
+    out = []
+    for kw in (keywords_list or []):
+        kl = kw.lower()
+        for d in DIET_KEYWORDS:
+            if d in kl or kl in d:
+                tag = d.replace(" ", "-") if " " in d else d
+                if tag not in out:
+                    out.append(tag)
+    return out[:5]
+
+
+def map_row(row, idx):
+    rid = row.get("RecipeId", "")
+    title = (row.get("Name") or "").strip() or "Untitled"
+    slug_id = f"csv-{rid}-{slug(title)[:30]}"
+
+    # Time: prefer TotalTime, else CookTime+PrepTime
+    total_min = parse_iso_duration(row.get("TotalTime"))
+    if total_min is None:
+        cook = parse_iso_duration(row.get("CookTime")) or 0
+        prep = parse_iso_duration(row.get("PrepTime")) or 0
+        total_min = cook + prep if (cook or prep) else 30
+    total_min = min(300, max(5, total_min))  # clamp 5–300 min
+
+    image = first_image(row.get("Images")) or ""
+
+    desc = (row.get("Description") or "").strip() or f"{total_min}-min recipe"
+    category = (row.get("RecipeCategory") or "").strip()
+    keywords_list = parse_r_list(row.get("Keywords") or "")
+    quantities = parse_r_list(row.get("RecipeIngredientQuantities") or "")
+    parts = parse_r_list(row.get("RecipeIngredientParts") or "")
     ingredients = []
-    for ing in ingredients_raw:
-        if isinstance(ing, str):
-            obj = ingredient_line_to_obj(ing)
-            if obj:
-                ingredients.append(obj)
-        elif isinstance(ing, dict):
-            ingredients.append({"name": ing.get("name", ""), "amount": ing.get("amount", "")})
+    for i, name in enumerate(parts[:40]):
+        amt = quantities[i] if i < len(quantities) else ""
+        ingredients.append({"name": name.strip(), "amount": amt.strip()})
 
-    if not ingredients and ingredients_raw:
-        ingredients = [{"name": str(i), "amount": ""} for i in ingredients_raw[:50]]
+    steps = parse_r_list(row.get("RecipeInstructions") or "")[:20]
 
-    rating = raw.get("rating")
-    if rating is None:
-        rating = 4.0
     try:
-        rating = float(rating)
+        rating = float(row.get("AggregatedRating") or 4.0)
     except (TypeError, ValueError):
         rating = 4.0
-    calories = raw.get("calories")
+    rating = round(max(0, min(5, rating)), 1)
+
     try:
-        calories = int(calories) if calories is not None else None
+        calories = float(row.get("Calories") or 0)
+        calories = int(calories) if calories > 0 else None
     except (TypeError, ValueError):
         calories = None
 
-    # Estimate time from number of steps
-    time_minutes = min(120, 15 + len(directions) * 8) if directions else 30
-    # Placeholder image (picsum seed by id)
-    image = f"https://picsum.photos/seed/{rid}/600/400"
+    difficulty = "easy" if len(ingredients) <= 8 else "medium" if len(ingredients) <= 15 else "hard"
 
     return {
-        "id": rid,
+        "id": slug_id,
         "title": title,
         "image": image,
-        "descriptionHook": (raw.get("desc") or title)[:60].strip() or f"{time_minutes}-min recipe",
-        "cuisineTags": infer_cuisine_tags(categories),
-        "dietTags": infer_diet_tags(categories),
-        "timeMinutes": time_minutes,
-        "difficulty": "easy" if len(ingredients) <= 8 else "medium" if len(ingredients) <= 15 else "hard",
+        "descriptionHook": desc,
+        "cuisineTags": infer_cuisine_tags(category, keywords_list),
+        "dietTags": infer_diet_tags(keywords_list),
+        "timeMinutes": total_min,
+        "difficulty": difficulty,
         "budgetLevel": "medium",
         "calories": calories,
-        "rating": round(rating, 1),
-        "ingredients": ingredients[:40],
-        "steps": directions[:20],
-        "recommendedReason": "Based on your preferences and recipe rating.",
-        "popularityScore": int(rating * 20) + len(directions),
-        "createdAt": raw.get("date") or "2020-01-01T00:00:00Z",
+        "rating": rating,
+        "ingredients": ingredients,
+        "steps": steps,
+        "servings": int(row.get("RecipeServings") or 2) if str(row.get("RecipeServings")).isdigit() else 2,
+        "recommendedReason": "From recipe dataset.",
+        "popularityScore": int(rating * 20) + len(steps),
     }
 
 
 def main():
     script_dir = Path(__file__).resolve().parent
     project_root = script_dir.parent
-    default_input = project_root / "data" / "full_format_recipes.json"
-    if not default_input.exists():
-        default_input = script_dir / "full_format_recipes.json"
+    default_csv = project_root / "data" / "raw" / "recipes.csv"
     default_output = project_root / "src" / "data" / "epicuriousRecipes.json"
 
-    input_path = Path(sys.argv[1]) if len(sys.argv) > 1 else default_input
-    output_path = Path(sys.argv[2]) if len(sys.argv) > 2 else default_output
-    limit = int(sys.argv[3]) if len(sys.argv) > 3 else 500
+    output_path = Path(sys.argv[1]) if len(sys.argv) > 1 else default_output
+    limit = int(sys.argv[2]) if len(sys.argv) > 2 else 500
 
-    if not input_path.exists():
-        print(f"Input file not found: {input_path}", file=sys.stderr)
-        print("Usage: python scripts/load_epicurious.py [input.json] [output.json] [limit]", file=sys.stderr)
-        print("Copy full_format_recipes.json to project/data/ or pass path.", file=sys.stderr)
+    if not default_csv.exists():
+        print(f"CSV not found: {default_csv}", file=sys.stderr)
+        print("Usage: python scripts/load_epicurious.py [output.json] [limit]", file=sys.stderr)
         sys.exit(1)
 
-    print(f"Reading {input_path}...")
-    with open(input_path, "r", encoding="utf-8") as f:
-        data = json.load(f)
-
-    if not isinstance(data, list):
-        data = [data]
+    print(f"Reading {default_csv}...")
     recipes = []
-    skipped_minimal = 0
-    for i, raw in enumerate(data):
-        if len(recipes) >= limit:
-            break
-        try:
-            title = (raw.get("title") or "").strip()
-            if title and title.lower() in SKIP_TITLES_LOWER:
-                skipped_minimal += 1
-                continue
-            r = map_recipe(raw, len(recipes))
-            if r["title"]:
-                recipes.append(r)
-        except Exception as e:
-            print(f"Skip recipe {i}: {e}", file=sys.stderr)
-    if skipped_minimal:
-        print(f"Skipped {skipped_minimal} minimal/joke recipe(s) (e.g. 'Salt Water for Boiling').", file=sys.stderr)
+    skipped = 0
+    with open(default_csv, "r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for i, row in enumerate(reader):
+            if limit and len(recipes) >= limit:
+                break
+            try:
+                title = (row.get("Name") or "").strip()
+                if not title or title.lower() in SKIP_TITLES_LOWER:
+                    skipped += 1
+                    continue
+                r = map_row(row, len(recipes))
+                if r["title"]:
+                    recipes.append(r)
+            except Exception as e:
+                print(f"Skip row {i}: {e}", file=sys.stderr)
+    if skipped:
+        print(f"Skipped {skipped} row(s).", file=sys.stderr)
+
+    output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    import json
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(recipes, f, ensure_ascii=False, indent=2)
     print(f"Wrote {len(recipes)} recipes to {output_path}")

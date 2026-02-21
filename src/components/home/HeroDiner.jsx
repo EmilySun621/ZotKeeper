@@ -23,7 +23,7 @@ export default function HeroDiner({ recipes }) {
   }, [recipes])
   const surpriseTo = surpriseRecipe ? `/recipe/${surpriseRecipe.id}` : '/search'
   const heroRecipe = surpriseRecipe ?? recipes?.[0]
-  const imageUrl = heroRecipe?.image ?? FALLBACK_IMAGE
+  const imageUrl = heroRecipe?.image || FALLBACK_IMAGE
 
   return (
     <section className="relative -mx-4 mb-14 overflow-hidden rounded-2xl sm:mx-0 sm:rounded-3xl">

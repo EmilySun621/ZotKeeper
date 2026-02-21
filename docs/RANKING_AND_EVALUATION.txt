@@ -1,0 +1,25 @@
+5. Search / Recommendation & Ranking
+
+5.1 Items or Actions Being Ranked
+- Search: We rank recipes (each item = one dish with title, cuisineTags, dietTags, ingredients, time, budget, rating). The ranked set is recipes that match the query and pass filters.
+- Recommendation (Feed): We rank recipes in the daily home feed. Candidates come from TheMealDB by category (Beef, Chicken, Seafood, etc.), merged then ranked.
+
+5.2 Ranking (Search)
+- Score = Relevance + User_Preference + Recipe_Quality (see docs/recipe-ranking-algorithm.md).
+- Relevance: field-weighted (Title 20 > Ingredients 12×IDF > Description 5 > Steps 2) and TF-IDF style: ingredient IDF computed from the current candidate corpus so rarer ingredients get higher weight.
+- User_Preference: cuisine weights, diet toggles, budget/time defaults (unchanged).
+- Recipe_Quality: rating×2 + log(1+reviewCount) or popularityScore×0.1.
+- Feed: Deterministic score = popularityScore + date-seeded pseudo-random; no learned ranking.
+
+5.3 How Personal Model + Context Affect Ranking
+- Personal: Cuisine weights (0–5) add weight*100 per matching tag in search (preferred cuisines grouped first), weight*2 in feed. Diet toggles add +200 (search) or +3 (feed). Default budget/time add small boosts and can be used as hard filters.
+- Context: Search uses query for API + keyword relevance; filters (time, budget, cuisines, diets, ingredients) are hard filters then we sort. Feed uses date (random seed) and current prefs; “disliked ingredients” from profile are merged into search exclude list.
+
+Future: We plan to make ranking more sophisticated (e.g. learned or hybrid signals, richer personalization, possibly embeddings or learning-to-rank) while keeping the current behavior as a baseline.
+
+6. Evaluation & Results (so far)
+
+- Search: With Japanese/Thai weights high, query “chicken” returns Japanese/Thai chicken dishes at the top; without prefs, order follows keyword + rating.
+- Feed: Same-day order stable; higher cuisine weight or diet toggle moves matching recipes up.
+- Example: Query “chicken”, context Japanese/Thai = 5 → Chicken Karaage etc. at top. Feed with Italian = 5 → Italian recipes rank higher.
+- Latency: Dominated by API; client ranking is fast. No precision@k yet; we validate by example queries and manual top-k check.

@@ -3,7 +3,7 @@ import { useRecipeById } from '../hooks/useRecipeById'
 import { useSavedRecipes } from '../hooks/useSavedRecipes'
 import WhyRecommended from '../components/recipe/WhyRecommended'
 import NutritionSummary from '../components/recipe/NutritionSummary'
-import { handleImageError } from '../utils/imageFallback'
+import { FALLBACK_IMAGE, handleImageError } from '../utils/imageFallback'
 
 export default function RecipeDetailPage() {
   const { id } = useParams()
@@ -36,7 +36,7 @@ export default function RecipeDetailPage() {
     <article className="mx-auto max-w-3xl">
       <div className="relative -mx-4 aspect-[16/10] overflow-hidden rounded-2xl bg-stone-100 sm:mx-0">
         <img
-          src={recipe.image}
+          src={recipe.image || FALLBACK_IMAGE}
           alt=""
           className="h-full w-full object-cover"
           onError={handleImageError}

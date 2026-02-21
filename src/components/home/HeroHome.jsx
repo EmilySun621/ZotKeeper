@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { handleImageError } from '../../utils/imageFallback'
+import { FALLBACK_IMAGE, handleImageError } from '../../utils/imageFallback'
 
 /**
  * Hero: one large atmospheric image, emotional headline, single CTA "Surprise Me".
@@ -8,7 +8,7 @@ import { handleImageError } from '../../utils/imageFallback'
 export default function HeroHome({ recipes }) {
   const heroRecipe = recipes?.[0] ?? null
 
-  const imageUrl = heroRecipe?.image ?? 'https://www.themealdb.com/images/media/meals/placeholder.jpg'
+  const imageUrl = heroRecipe?.image || FALLBACK_IMAGE
   const surpriseTo = heroRecipe ? `/recipe/${heroRecipe.id}` : '/search'
 
   return (

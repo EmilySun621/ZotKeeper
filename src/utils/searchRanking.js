@@ -1,12 +1,13 @@
 /**
- * Filter and rank recipes for search:
- * - Keyword match on title, descriptionHook, cuisineTags, dietTags, ingredients
- * - Filter by time, budget, cuisine, diet, difficulty, calories
- * - Ranking: user preference (cuisine weights, diet, budget/time defaults) first, then keyword relevance, then base score
+ * Filter and rank recipes for search.
+ * Ranking = Relevance (TF-IDF-style ingredient rarity + field weighting) + User_Preference + Recipe_Quality.
+ * See docs/recipe-ranking-algorithm.md.
  */
 
 import { TIME_OPTIONS } from '../constants/preferences'
 import { loadPreferences } from '../hooks/usePreferences'
+
+const FIELD_WEIGHTS = { title: 20, ingredient: 12, description: 5, steps: 2 }
 
 /** Exported for use in useSearchRecipes when merging area-based results. */
 export function recipeMatchesKeyword(recipe, query) {
@@ -43,8 +44,37 @@ function getCuisineWeight(cuisineWeights, tag) {
 }
 
 /**
- * User-preference score for ranking (higher = better match to profile).
- * Uses a large scale (hundreds) so preferred cuisines always rise to the top.
+ * Build ingredient IDF from current corpus (filtered recipe list).
+ * DF(term) = number of recipes that contain that term in any ingredient; IDF = log((N+1)/(df+1))+1.
+ */
+function buildIngredientIDF(recipes) {
+  const N = recipes.length
+  const df = new Map()
+  for (const r of recipes) {
+    const termsInRecipe = new Set()
+    const ings = (r.ingredients || []).map((i) => (typeof i === 'object' ? i.name : i)).filter(Boolean)
+    for (const name of ings) {
+      const n = String(name).trim().toLowerCase()
+      if (!n) continue
+      termsInRecipe.add(n)
+      for (const t of n.split(/\s+/).filter(Boolean)) {
+        if (t.length >= 2) termsInRecipe.add(t)
+      }
+    }
+    for (const t of termsInRecipe) {
+      df.set(t, (df.get(t) || 0) + 1)
+    }
+  }
+  const idf = new Map()
+  for (const [term, count] of df) {
+    idf.set(term, Math.log((N + 1) / (count + 1)) + 1)
+  }
+  return idf
+}
+
+/**
+ * User-preference score (User_Preference in combined formula).
+ * Large scale so preferred cuisines group first.
  */
 function preferenceScore(recipe, preferences) {
   let score = 0
@@ -55,40 +85,55 @@ function preferenceScore(recipe, preferences) {
     timeDefault,
   } = preferences
 
-  // Cuisine: weight 0–5 → 100–500 points per matching tag so they always beat non-matching
   recipe.cuisineTags?.forEach((tag) => {
     const w = getCuisineWeight(cuisineWeights, tag)
     if (w != null && w > 0) score += w * 100
   })
-
-  // Diet: strong boost when recipe matches user's diet toggles
   recipe.dietTags?.forEach((d) => {
     if (dietToggles[d]) score += 200
   })
-
-  // Default budget / time: smaller boost
   if (budgetDefault && recipe.budgetLevel === budgetDefault) score += 50
   if (timeDefault) {
     const maxMin = getMaxMinutes(timeDefault)
     if ((recipe.timeMinutes ?? 999) <= maxMin) score += 30
   }
-
   return score
 }
 
 /**
- * Keyword relevance: title match > description/tags so better keyword matches rank higher when preference is equal.
+ * Recipe_Quality: rating + popularity/review signal.
  */
-function keywordRelevanceScore(recipe, keyword) {
+function qualityScore(recipe) {
+  const rating = (recipe.rating ?? 0) * 2
+  const reviewSignal = recipe.reviewCount != null
+    ? Math.log1p(recipe.reviewCount)
+    : (recipe.popularityScore ?? 0) * 0.1
+  return rating + reviewSignal
+}
+
+/**
+ * Relevance = field-weighted text match + ingredient match with IDF (TF-IDF style).
+ * Title > Ingredients (×IDF) > Description > Steps.
+ */
+function relevanceScore(recipe, keyword, ingredientIDF) {
   if (!keyword || !keyword.trim()) return 0
-  const q = keyword.trim().toLowerCase()
+  const terms = keyword.trim().toLowerCase().split(/\s+/).filter(Boolean)
+  if (terms.length === 0) return 0
   let score = 0
-  if (recipe.title?.toLowerCase().includes(q)) score += 15
-  if (recipe.descriptionHook?.toLowerCase().includes(q)) score += 5
-  const inTags = [...(recipe.cuisineTags || []), ...(recipe.dietTags || [])].some((t) =>
-    String(t).toLowerCase().includes(q)
-  )
-  if (inTags) score += 3
+  const title = (recipe.title || '').toLowerCase()
+  const desc = (recipe.descriptionHook || '').toLowerCase()
+  const stepsText = (recipe.steps || []).map((s) => (typeof s === 'string' ? s : '')).join(' ').toLowerCase()
+  const ingNames = (recipe.ingredients || []).map((i) => (typeof i === 'object' ? i.name : i)).filter(Boolean)
+
+  for (const term of terms) {
+    if (term.length < 2) continue
+    if (title.includes(term)) score += FIELD_WEIGHTS.title
+    const idf = ingredientIDF.get(term) ?? 1
+    const inIng = ingNames.some((n) => String(n).toLowerCase().includes(term))
+    if (inIng) score += FIELD_WEIGHTS.ingredient * idf
+    if (desc.includes(term)) score += FIELD_WEIGHTS.description
+    if (stepsText.includes(term)) score += FIELD_WEIGHTS.steps
+  }
   return score
 }
 
@@ -143,27 +188,25 @@ export function filterAndRankRecipes(recipes, keyword, filters) {
     })
   }
 
-  // Score each recipe (preference score + keyword relevance + tie-breakers)
+  // Combined score: Relevance + User_Preference + Recipe_Quality (see docs/recipe-ranking-algorithm.md)
+  const ingredientIDF = buildIngredientIDF(list)
   const cuisineWeights = preferences.cuisineWeights || {}
   const hasPreferredCuisines = Object.keys(cuisineWeights).some((k) => (cuisineWeights[k] || 0) > 0)
 
   const scored = list.map((r) => {
-    const prefScore = preferenceScore(r, preferences)
-    const otherScore =
-      keywordRelevanceScore(r, keyword) +
-      (r.rating ?? 0) * 2 +
-      (r.popularityScore ?? 0) * 0.1
-    return { recipe: r, prefScore, otherScore }
+    const relevance = relevanceScore(r, keyword, ingredientIDF)
+    const userPref = preferenceScore(r, preferences)
+    const quality = qualityScore(r)
+    const total = relevance + userPref + quality
+    return { recipe: r, userPref, relevancePlusQuality: relevance + quality, total }
   })
 
-  // If user has cuisine preferences: put preferred recipes first, then the rest (each group sorted by otherScore)
   if (hasPreferredCuisines) {
-    const preferred = scored.filter((x) => x.prefScore > 0).sort((a, b) => b.prefScore - a.prefScore || b.otherScore - a.otherScore)
-    const rest = scored.filter((x) => x.prefScore === 0).sort((a, b) => b.otherScore - a.otherScore)
+    const preferred = scored.filter((x) => x.userPref > 0).sort((a, b) => b.userPref - a.userPref || b.relevancePlusQuality - a.relevancePlusQuality)
+    const rest = scored.filter((x) => x.userPref === 0).sort((a, b) => b.relevancePlusQuality - a.relevancePlusQuality)
     return preferred.map((x) => x.recipe).concat(rest.map((x) => x.recipe))
   }
 
-  // No cuisine weights: sort by otherScore only
-  scored.sort((a, b) => b.otherScore - a.otherScore)
+  scored.sort((a, b) => b.total - a.total)
   return scored.map((x) => x.recipe)
 }

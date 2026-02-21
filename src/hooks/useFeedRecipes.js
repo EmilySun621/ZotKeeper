@@ -1,11 +1,9 @@
 import { useState, useEffect } from 'react'
-import { getFeedMeals } from '../api/themealdb'
-import { rankFeedRecipes } from '../utils/feedRanking'
+import { searchRecipes } from '../api/recipesBackend'
 import { usePreferences } from './usePreferences'
 
 const FEED_STORAGE_KEY = 'zotkeeper_feed_cache'
 
-/** Stable key so same preferences always get the same string */
 function getPreferenceKey(preferences) {
   if (!preferences) return ''
   const o = {
@@ -42,8 +40,8 @@ function saveFeedToStorage(recipes, prefKey) {
 }
 
 /**
- * Feed recipes: cached so the list stays the same when you navigate back.
- * Only refetches when preferences change.
+ * Feed recipes from recipe ranking backend (no keyword = first N ranked by preference + quality).
+ * Cached per preference key so list stays stable when navigating back.
  */
 export function useFeedRecipes() {
   const { preferences } = usePreferences()
@@ -64,12 +62,23 @@ export function useFeedRecipes() {
     let cancelled = false
     setLoading(true)
     setError(null)
-    getFeedMeals(24)
-      .then((list) => {
+    searchRecipes({
+      keyword: '',
+      filters: {},
+      preferences: {
+        cuisineWeights: preferences.cuisineWeights ?? {},
+        dietToggles: preferences.dietToggles ?? {},
+        budgetDefault: preferences.budgetDefault,
+        timeDefault: preferences.timeDefault,
+        dislikedIngredients: preferences.dislikedIngredients ?? [],
+        allergiesToAvoid: preferences.allergiesToAvoid ?? [],
+      },
+      limit: 24,
+    })
+      .then(({ recipes: list }) => {
         if (cancelled) return
-        const ranked = rankFeedRecipes(list, preferences)
-        saveFeedToStorage(ranked, prefKey)
-        setRecipes(ranked)
+        saveFeedToStorage(list, prefKey)
+        setRecipes(list)
       })
       .catch((err) => {
         if (!cancelled) setError(err?.message || 'Failed to load recipes')

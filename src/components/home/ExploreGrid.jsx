@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { handleImageError } from '../../utils/imageFallback'
+import { FALLBACK_IMAGE, handleImageError } from '../../utils/imageFallback'
 
 const PAGE_SIZE = 12
 
@@ -50,7 +50,7 @@ export default function ExploreGrid({ recipes }) {
           >
             <div className="relative overflow-hidden">
               <img
-                src={recipe.image}
+                src={recipe.image || FALLBACK_IMAGE}
                 alt=""
                 className="w-full object-cover transition duration-300 group-hover:scale-105"
                 style={{ aspectRatio: 0.85 + (i % 3) * 0.15 }}

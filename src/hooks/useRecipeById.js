@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react'
-import { getMealById } from '../api/themealdb'
+import { getRecipeById } from '../api/recipesBackend'
 
+/**
+ * Load a single recipe by id from the recipe ranking backend (GET /api/recipes/:id).
+ */
 export function useRecipeById(id) {
   const [recipe, setRecipe] = useState(null)
   const [loading, setLoading] = useState(!!id)
@@ -16,7 +19,7 @@ export function useRecipeById(id) {
     let cancelled = false
     setLoading(true)
     setError(null)
-    getMealById(id)
+    getRecipeById(id)
       .then((data) => {
         if (!cancelled) setRecipe(data)
       })
