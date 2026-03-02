@@ -22,10 +22,20 @@ const SUGGESTIONS = ['chicken', 'pasta', 'cake', 'beef', 'fish', 'salad']
 export default function SearchPage() {
   const [keyword, setKeyword] = useState('')
   const [filters, setFilters] = useState(defaultFilters)
+  const [page, setPage] = useState(1)
   const { preferences } = usePreferences()
-  const { results, suggestedKeyword, loading, error } = useSearchRecipes(keyword, filters)
+  const { results, totalResults, totalPages, page: currentPage, suggestedKeyword, loading, error } = useSearchRecipes(keyword, filters, page)
 
   const hasSearched = keyword.trim().length > 0
+
+  const handleKeywordChange = (v) => {
+    setKeyword(v)
+    setPage(1)
+  }
+  const handleFiltersChange = (f) => {
+    setFilters(f)
+    setPage(1)
+  }
 
   return (
     <div>
@@ -33,14 +43,14 @@ export default function SearchPage() {
         Search recipes
       </h1>
       <div className="mb-4">
-        <SearchBar value={keyword} onChange={setKeyword} />
+        <SearchBar value={keyword} onChange={handleKeywordChange} />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
         <aside className="lg:sticky lg:top-24 lg:self-start">
           <FilterPanel
             filters={filters}
-            onChange={setFilters}
+            onChange={handleFiltersChange}
             preferences={preferences}
           />
         </aside>
@@ -54,7 +64,7 @@ export default function SearchPage() {
               <p className="font-semibold text-red-800">Search failed</p>
               <p className="mt-2 text-sm text-red-700">{error}</p>
               <p className="mt-3 text-xs text-stone-500">
-                Make sure the recipe backend is running (e.g. uvicorn scripts.serve_recipes:app --port 8000).
+                Make sure the recipe API server is running (e.g. cd server && npm run dev on port 3001).
               </p>
             </div>
           )}
@@ -77,7 +87,7 @@ export default function SearchPage() {
                   <button
                     key={term}
                     type="button"
-                    onClick={() => setKeyword(term)}
+                    onClick={() => { setKeyword(term); setPage(1) }}
                     className="rounded-full bg-tomato-500 px-5 py-2.5 text-sm font-medium text-white shadow transition hover:bg-tomato-600"
                   >
                     {term}
@@ -97,7 +107,7 @@ export default function SearchPage() {
           {!error && !loading && hasSearched && results.length > 0 && (
             <>
               <p className="mb-4 text-sm text-stone-500">
-                {results.length} result{results.length !== 1 ? 's' : ''}
+                {totalResults} result{totalResults !== 1 ? 's' : ''}
                 {suggestedKeyword && suggestedKeyword !== keyword.trim() && (
                   <span className="ml-2 text-stone-400">
                     (showing results for “{suggestedKeyword}”)
@@ -105,6 +115,29 @@ export default function SearchPage() {
                 )}
               </p>
               <SearchResults recipes={results} />
+              {totalPages > 1 && (
+                <div className="mt-6 flex flex-wrap items-center justify-center gap-2 border-t border-stone-200 pt-6">
+                  <button
+                    type="button"
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={currentPage <= 1}
+                    className="rounded-lg border border-stone-200 bg-white px-4 py-2 text-sm font-medium text-stone-700 shadow-sm transition hover:bg-stone-50 disabled:pointer-events-none disabled:opacity-50"
+                  >
+                    ← Previous
+                  </button>
+                  <span className="px-3 py-2 text-sm text-stone-600">
+                    Page {currentPage} of {totalPages}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={currentPage >= totalPages}
+                    className="rounded-lg border border-stone-200 bg-white px-4 py-2 text-sm font-medium text-stone-700 shadow-sm transition hover:bg-stone-50 disabled:pointer-events-none disabled:opacity-50"
+                  >
+                    Next →
+                  </button>
+                </div>
+              )}
             </>
           )}
         </section>

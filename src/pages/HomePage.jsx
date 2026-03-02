@@ -17,9 +17,9 @@ export default function HomePage() {
         <p className="mt-1 text-sm text-stone-600">{error}</p>
         {isNetworkError && (
           <p className="mt-4 text-sm text-stone-600">
-            Start the recipe backend: <code className="rounded bg-amber-100 px-1.5 py-0.5 text-xs">uvicorn scripts.serve_recipes:app --port 8000</code>
+            Start the recipe API server: <code className="rounded bg-amber-100 px-1.5 py-0.5 text-xs">cd server && npm install && npm run dev</code>
             <br />
-            (from project root, after <code className="rounded bg-amber-100 px-1.5 py-0.5 text-xs">pip install fastapi uvicorn</code>)
+            Set <code className="rounded bg-amber-100 px-1.5 py-0.5 text-xs">SPOONACULAR_API_KEY</code> in <code className="rounded bg-amber-100 px-1.5 py-0.5 text-xs">.env</code> and <code className="rounded bg-amber-100 px-1.5 py-0.5 text-xs">VITE_RECIPE_API_URL=http://localhost:3001</code> for the frontend.
           </p>
         )}
       </div>
