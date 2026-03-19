@@ -83,7 +83,7 @@ export default function FilterPanel({ filters, onChange, preferences }) {
             >
               <option value="">Any</option>
               {BUDGET_OPTIONS.map((o) => (
-                <option key={o} value={o}>{o}</option>
+                <option key={o} value={o}>{o.charAt(0).toUpperCase() + o.slice(1)}</option>
               ))}
             </select>
           </div>

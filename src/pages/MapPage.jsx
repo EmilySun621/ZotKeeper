@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { getCuisines, searchRecipes } from '../api/recipesBackend'
 import { groupCuisinesByContinent, CONTINENT_ORDER } from '../data/cuisinesByContinent'
+import { filterAndRankRecipes } from '../utils/searchRanking'
+import { usePreferences } from '../hooks/usePreferences'
 import FeedCard from '../components/feed/FeedCard'
 
 /** Display label for a cuisine tag. */
@@ -13,6 +15,7 @@ function cuisineLabel(tag) {
  * Explore by region: left = select continent + cuisine, right = recipe grid (from recipe backend).
  */
 export default function MapPage() {
+  const { preferences } = usePreferences()
   const [cuisines, setCuisines] = useState([])
   const [selectedContinent, setSelectedContinent] = useState('')
   const [selectedCuisine, setSelectedCuisine] = useState('')
@@ -24,6 +27,7 @@ export default function MapPage() {
   const [error, setError] = useState(null)
 
   const PAGE_SIZE = 20
+  const FETCH_LIMIT = 100
   const totalPages = Math.max(1, Math.ceil(totalResults / PAGE_SIZE))
 
   const byContinent = groupCuisinesByContinent(cuisines)
@@ -58,24 +62,35 @@ export default function MapPage() {
     searchRecipes({
       keyword: '',
       filters: { cuisines: [selectedCuisine] },
-      preferences: {},
-      limit: PAGE_SIZE,
-      offset: (page - 1) * PAGE_SIZE,
+      preferences: {
+        cuisineWeights: preferences.cuisineWeights || {},
+        dietToggles: preferences.dietToggles || {},
+        budgetDefault: preferences.budgetDefault,
+        timeDefault: preferences.timeDefault,
+        dislikedIngredients: preferences.dislikedIngredients || [],
+        allergiesToAvoid: preferences.allergiesToAvoid || [],
+      },
+      limit: FETCH_LIMIT,
+      offset: 0,
     })
-      .then(({ recipes: list, totalResults: total }) => {
+      .then(({ recipes: list }) => {
         if (!cancelled) {
-          setRecipes(list)
-          setTotalResults(total ?? list.length)
+          const ranked = filterAndRankRecipes(list || [], '', { cuisines: [selectedCuisine] })
+          setRecipes(ranked)
+          setTotalResults(ranked.length)
         }
       })
       .catch(() => {
-        if (!cancelled) setRecipes([])
+        if (!cancelled) {
+          setRecipes([])
+          setTotalResults(0)
+        }
       })
       .finally(() => {
         if (!cancelled) setLoadingRecipes(false)
       })
     return () => { cancelled = true }
-  }, [selectedCuisine, page])
+  }, [selectedCuisine, preferences])
 
   const handleContinentChange = (continent) => {
     setSelectedContinent(continent || '')
@@ -170,9 +185,11 @@ export default function MapPage() {
                       {totalResults} recipe{totalResults !== 1 ? 's' : ''} found
                     </p>
                     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                      {recipes.map((recipe) => (
-                        <FeedCard key={recipe.id} recipe={recipe} />
-                      ))}
+                      {recipes
+                        .slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+                        .map((recipe) => (
+                          <FeedCard key={recipe.id} recipe={recipe} />
+                        ))}
                     </div>
                     {totalPages > 1 && (
                       <div className="mt-6 flex flex-wrap items-center justify-center gap-2 border-t border-stone-200 pt-6">

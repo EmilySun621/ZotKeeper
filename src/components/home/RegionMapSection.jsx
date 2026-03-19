@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
 import { getCuisines, searchRecipes } from '../../api/recipesBackend'
+import { filterAndRankRecipes } from '../../utils/searchRanking'
+import { usePreferences } from '../../hooks/usePreferences'
 import FeedCard from '../feed/FeedCard'
 
 /** Display label for a cuisine tag (e.g. "middle eastern" → "Middle eastern"). */
@@ -12,6 +14,7 @@ function cuisineLabel(tag) {
  * Section: "map" of cuisines (from recipe backend). Click a cuisine → show recipes for that cuisine.
  */
 export default function RegionMapSection() {
+  const { preferences } = usePreferences()
   const [cuisines, setCuisines] = useState([])
   const [selectedCuisine, setSelectedCuisine] = useState(null)
   const [recipes, setRecipes] = useState([])
@@ -45,11 +48,21 @@ export default function RegionMapSection() {
     searchRecipes({
       keyword: '',
       filters: { cuisines: [selectedCuisine] },
-      preferences: {},
-      limit: 24,
+      preferences: {
+        cuisineWeights: preferences.cuisineWeights || {},
+        dietToggles: preferences.dietToggles || {},
+        budgetDefault: preferences.budgetDefault,
+        timeDefault: preferences.timeDefault,
+        dislikedIngredients: preferences.dislikedIngredients || [],
+        allergiesToAvoid: preferences.allergiesToAvoid || [],
+      },
+      limit: 100,
     })
       .then(({ recipes: list }) => {
-        if (!cancelled) setRecipes(list)
+        if (!cancelled) {
+          const ranked = filterAndRankRecipes(list || [], '', { cuisines: [selectedCuisine] })
+          setRecipes(ranked.slice(0, 24))
+        }
       })
       .catch(() => {
         if (!cancelled) setRecipes([])
@@ -58,7 +71,7 @@ export default function RegionMapSection() {
         if (!cancelled) setLoadingRecipes(false)
       })
     return () => { cancelled = true }
-  }, [selectedCuisine])
+  }, [selectedCuisine, preferences])
 
   if (error) {
     return (

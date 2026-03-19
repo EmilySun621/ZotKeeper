@@ -23,8 +23,11 @@ export const DIFFICULTY_OPTIONS = ['easy', 'medium', 'hard']
 export const DEFAULT_PREFERENCES = {
   cuisineWeights: {}, // { [cuisine]: 0-5 }
   dietToggles: {},    // { [diet]: true/false }
-  spiceLevel: 2,     // 0-5
   dislikedIngredients: [],
   budgetDefault: 'medium',
   timeDefault: 'medium',
+  lowCaloriePriority: false,
+  highProteinPriority: false,
+  lowCarbPriority: false,
+  budgetFriendlyPriority: false,
 }
