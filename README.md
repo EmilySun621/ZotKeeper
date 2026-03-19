@@ -1,17 +1,46 @@
-# ZotKeeper — Recipe Recommendation Frontend
+# ZotKeeper — Recipe Recommendation App
 
-Frontend for a recipe recommendation app: daily feed, search with filters and preference weights, recipe detail, and profile with saved recipes and preference settings.
+ZotKeeper is a recipe discovery app with a daily feed, keyword search, and profile-based personalization. It uses a small Node proxy to keep the Spoonacular API key server-side.
 
-**Data:** The app uses **[TheMealDB](https://www.themealdb.com/)** for recipes (free API, no key required). Feed is built from category filters (Beef, Chicken, Seafood, etc.); search uses meal name; detail and saved recipes use lookup by id. Local data in `src/data/` is no longer used by default.
+**Data source:** [Spoonacular Food API](https://spoonacular.com/food-api) via the local proxy in `server/`.
 
-## Run
+---
+
+## Quick Start (Dev)
+
+### 1) Start the API proxy
 
 ```bash
+cd server
+npm install
+# Create server/.env and set your key:
+# SPOONACULAR_API_KEY=your_key_here
+npm run dev
+```
+
+The proxy runs at `http://localhost:3001`.
+
+### 2) Start the frontend
+
+```bash
+cd ..
 npm install
 npm run dev
 ```
 
-Open the URL shown (e.g. http://localhost:5173).
+Open the URL shown (e.g. `http://localhost:5173`).
+
+**Production note:** set `VITE_RECIPE_API_URL` to your deployed proxy URL.
+
+---
+
+## How to Use
+
+- **Sign up / log in** (local demo auth stored in `localStorage`).
+- **Browse** the daily feed and explore cuisines by region.
+- **Search** with filters (time, budget, diet, calories, include/exclude ingredients).
+- **Save recipes** with the heart icon.
+- **Set preferences** to personalize ranking (cuisine weights, dietary toggles, allergies, nutrition priorities, default budget/time).
 
 ---
 
@@ -19,64 +48,55 @@ Open the URL shown (e.g. http://localhost:5173).
 
 | Route | Description |
 |-------|-------------|
-| **/** | Home — Daily feed with “Today’s Picks” hero and load-more feed. Cards: big image, title, hook, tags, save button. |
-| **/search** | Search — Keyword + filters (time, budget, cuisine, diet, difficulty, calories, include/exclude ingredients). Results ranked by match + **preference weights** (cuisine sliders, diet toggles from Profile). |
-| **/recipe/:id** | Recipe detail — Cover image, title, rating, time, servings, ingredients, steps, nutrition, “Why recommended”, save button. |
-| **/profile** | Profile — Mock user; tabs: **Saved Recipes** (grid/list, sort by recent / cook time / rating), **Preference Settings** (cuisine 0–5, diet toggles, spice, disliked ingredients, default budget/time). All persisted in `localStorage`. |
+| **/** | Home — Daily feed, hero picks, and explore by region. |
+| **/map** | Region explorer — choose cuisine and browse results. |
+| **/search** | Search — keyword + filters with preference-aware ranking. |
+| **/recipe/:id** | Recipe detail — summary, ingredients, steps, nutrition, save button. |
+| **/profile** | Profile — saved recipes + preference settings. |
+| **/login** | Local demo login/signup. |
 
 ---
 
-## Structure
+## Ranking & Preferences (Current)
+
+- **Search ranking** = Relevance + Preference + Quality  
+  - Preference uses cuisine weights, diet toggles, default budget/time, and nutrition priorities (low-calorie, high-protein, low-carb, budget-friendly).
+  - Allergies/disliked ingredients are used as hard exclusions.
+- **Feed ranking** = popularity + date-seeded randomness + preference boosts.
+
+---
+
+## Project Structure (Key Files)
 
 ```
+server/
+└── index.js                 # Express proxy for Spoonacular
+
 src/
-├── App.jsx                 # Routes + Layout
-├── main.jsx                # BrowserRouter + App
-├── index.css               # Tailwind + app-bg + heart-pop animation
-├── components/
-│   ├── layout/             # Layout.jsx, Nav.jsx (top nav desktop, bottom nav mobile)
-│   ├── feed/               # FeedCard, Feed, HeroPicks
-│   ├── search/             # SearchBar, FilterPanel (collapsible), SearchResults
-│   ├── recipe/             # WhyRecommended, NutritionSummary
-│   └── profile/            # ProfileHeader, SavedRecipesTab, PreferenceSettingsTab
-├── pages/
-│   ├── HomePage.jsx        # Feed ranking (popularity + date seed + preference boost)
-│   ├── SearchPage.jsx      # Keyword + filters + preference ranking
-│   ├── RecipeDetailPage.jsx # Full recipe view
-│   └── ProfilePage.jsx      # Saved + Preference tabs
+├── App.jsx                  # Routes + layout
 ├── api/
-│   ├── themealdb.js       # TheMealDB client (search, lookup, filter by category, feed)
-│   └── spoonacular.js     # Legacy Spoonacular client (unused)
-├── data/
-│   ├── recipeData.js      # Local getRecipeById/getAllRecipes (fallback/unused by default)
-│   ├── epicuriousRecipes.json  # Local recipes (optional)
-│   └── mockRecipes.js     # Mock fallback
+│   └── recipesBackend.js    # Client for /api/* proxy
 ├── hooks/
-│   ├── useFeedRecipes.js  # TheMealDB feed (getFeedMeals + rank)
-│   ├── useSearchRecipes.js # TheMealDB search + client-side filter/rank
-│   ├── useRecipeById.js   # TheMealDB lookup by id
-│   ├── useSavedRecipesData.js # TheMealDB bulk lookup for saved IDs
-│   ├── useSavedRecipes.js # localStorage saved IDs; isSaved, toggleSaved
-│   └── usePreferences.js # localStorage preferences
+│   ├── useFeedRecipes.js    # Feed fetch + ranking
+│   ├── useSearchRecipes.js  # Search fetch + filtering + ranking
+│   ├── useRecipeById.js     # Detail fetch
+│   ├── useSavedRecipes.js   # Per-user saved IDs
+│   └── usePreferences.js    # Per-user preferences
+├── pages/
+│   ├── HomePage.jsx
+│   ├── MapPage.jsx
+│   ├── SearchPage.jsx
+│   ├── RecipeDetailPage.jsx
+│   └── ProfilePage.jsx
 ├── utils/
-│   ├── feedRanking.js      # rankFeedRecipes(recipes, preferences)
-│   └── searchRanking.js    # filterAndRankRecipes(recipes, keyword, filters, preferences)
+│   ├── feedRanking.js
+│   └── searchRanking.js
 └── constants/
-    └── preferences.js     # CUISINE_OPTIONS, DIET_OPTIONS, TIME/BUDGET/DIFFICULTY, DEFAULT_PREFERENCES
+    └── preferences.js
 ```
-
----
-
-## Behavior
-
-- **Feed**: Rank = `popularityScore` + date-seeded randomness + boost if recipe matches user cuisine weights / diet toggles.
-- **Search**: Filter by keyword and panel filters; rank by rating/popularity + preference boost. Profile “disliked ingredients” are merged into search exclude list.
-- **Saved recipes**: Stored as IDs in `localStorage`; Profile → Saved Recipes shows them with grid/list and sort.
-- **Preferences**: Stored in `localStorage`; used for feed and search ranking and for default budget/time.
 
 ---
 
 ## Tech
 
-- React 18, React Router 6, Vite, Tailwind CSS. Functional components and hooks only. Mobile-first layout; bottom nav on mobile, top nav on desktop.
-# ZotKeeper-
+- React 18, React Router 6, Vite, Tailwind CSS
