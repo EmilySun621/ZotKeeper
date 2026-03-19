@@ -1,9 +1,8 @@
 /**
- * Client for the recipe ranking backend (Python serve_recipes / load_recipes_from_db).
- * Base URL: VITE_RECIPE_API_URL or http://localhost:8000
+ * Client for the recipe API (Spoonacular proxy). Base URL: VITE_RECIPE_API_URL or same-origin (Vite proxies /api/* in dev).
  */
 
-const BASE = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_RECIPE_API_URL) || 'http://localhost:8000'
+const BASE = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_RECIPE_API_URL) || ''
 
 /** Backend returns snake_case; frontend expects camelCase. */
 export function recipeToCamel(r) {
@@ -24,7 +23,7 @@ export function recipeToCamel(r) {
  * Search/feed: POST /api/search with body { keyword, filters, preferences, limit }.
  * Returns { recipes: [...] } (recipes converted to camelCase).
  */
-export async function searchRecipes({ keyword = '', filters = {}, preferences = {}, limit = 200 } = {}) {
+export async function searchRecipes({ keyword = '', filters = {}, preferences = {}, limit = 20, offset = 0 } = {}) {
   const res = await fetch(`${BASE}/api/search`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -50,17 +49,24 @@ export async function searchRecipes({ keyword = '', filters = {}, preferences = 
         disliked_ingredients: preferences.dislikedIngredients || [],
       },
       limit,
+      offset,
     }),
   })
   if (!res.ok) {
-    const t = await res.text()
-    throw new Error(t || `Search failed: ${res.status}`)
+    const text = await res.text()
+    let msg = text
+    try {
+      const errBody = JSON.parse(text)
+      if (errBody?.error) msg = errBody.error
+    } catch (_) {}
+    throw new Error(msg || `Search failed: ${res.status}`)
   }
   const data = await res.json()
   const recipes = (data.recipes || []).map(recipeToCamel)
   return {
     recipes,
     count: recipes.length,
+    totalResults: data.totalResults ?? recipes.length,
     suggestedKeyword: data.suggestedKeyword ?? null,
   }
 }
@@ -78,14 +84,39 @@ export async function getCuisines() {
 /**
  * Single recipe: GET /api/recipes/:id
  */
+function parseErrorResponse(text) {
+  try {
+    const body = JSON.parse(text)
+    return body?.error || text
+  } catch (_) {
+    return text
+  }
+}
+
 export async function getRecipeById(id) {
   const res = await fetch(`${BASE}/api/recipes/${encodeURIComponent(id)}`)
   if (!res.ok) {
     if (res.status === 404) return null
-    const t = await res.text()
-    throw new Error(t || `Failed to load recipe: ${res.status}`)
+    const text = await res.text()
+    throw new Error(parseErrorResponse(text) || `Failed to load recipe: ${res.status}`)
   }
   const r = await res.json()
   if (r.error) return null
   return recipeToCamel(r)
+}
+
+/**
+ * Bulk recipes by id (for saved recipes). GET /api/recipes/bulk?ids=1,2,3
+ */
+export async function getRecipesBulk(ids) {
+  if (!ids || !ids.length) return []
+  const idList = ids.map((id) => String(id)).join(',')
+  const res = await fetch(`${BASE}/api/recipes/bulk?ids=${encodeURIComponent(idList)}`)
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(parseErrorResponse(text) || 'Failed to load recipes')
+  }
+  const data = await res.json()
+  const list = data.recipes || data || []
+  return list.map(recipeToCamel)
 }

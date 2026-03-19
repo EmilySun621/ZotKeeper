@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo } from 'react'
-import { getMealsByIds } from '../api/themealdb'
+import { getRecipesBulk } from '../api/recipesBackend'
 import { useSavedRecipes } from './useSavedRecipes'
 
 /**
- * Fetch full recipe data for saved IDs from TheMealDB.
+ * Fetch full recipe data for saved IDs from recipe API (Spoonacular proxy).
  */
 export function useSavedRecipesData(sort = 'recent') {
   const { savedIds } = useSavedRecipes()
@@ -22,7 +22,7 @@ export function useSavedRecipesData(sort = 'recent') {
     let cancelled = false
     setLoading(true)
     setError(null)
-    getMealsByIds(idList)
+    getRecipesBulk(idList)
       .then((list) => {
         if (!cancelled) setRecipes(list)
       })

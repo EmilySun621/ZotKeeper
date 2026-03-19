@@ -17,9 +17,14 @@ export default function MapPage() {
   const [selectedContinent, setSelectedContinent] = useState('')
   const [selectedCuisine, setSelectedCuisine] = useState('')
   const [recipes, setRecipes] = useState([])
+  const [totalResults, setTotalResults] = useState(0)
+  const [page, setPage] = useState(1)
   const [loadingCuisines, setLoadingCuisines] = useState(true)
   const [loadingRecipes, setLoadingRecipes] = useState(false)
   const [error, setError] = useState(null)
+
+  const PAGE_SIZE = 20
+  const totalPages = Math.max(1, Math.ceil(totalResults / PAGE_SIZE))
 
   const byContinent = groupCuisinesByContinent(cuisines)
   const orderedContinents = CONTINENT_ORDER.filter((c) => byContinent[c]?.length)
@@ -44,6 +49,8 @@ export default function MapPage() {
   useEffect(() => {
     if (!selectedCuisine) {
       setRecipes([])
+      setTotalResults(0)
+      setPage(1)
       return
     }
     let cancelled = false
@@ -52,10 +59,14 @@ export default function MapPage() {
       keyword: '',
       filters: { cuisines: [selectedCuisine] },
       preferences: {},
-      limit: 48,
+      limit: PAGE_SIZE,
+      offset: (page - 1) * PAGE_SIZE,
     })
-      .then(({ recipes: list }) => {
-        if (!cancelled) setRecipes(list)
+      .then(({ recipes: list, totalResults: total }) => {
+        if (!cancelled) {
+          setRecipes(list)
+          setTotalResults(total ?? list.length)
+        }
       })
       .catch(() => {
         if (!cancelled) setRecipes([])
@@ -64,12 +75,18 @@ export default function MapPage() {
         if (!cancelled) setLoadingRecipes(false)
       })
     return () => { cancelled = true }
-  }, [selectedCuisine])
+  }, [selectedCuisine, page])
 
   const handleContinentChange = (continent) => {
     setSelectedContinent(continent || '')
     const stillInContinent = continent && selectedCuisine && byContinent[continent]?.includes(selectedCuisine)
     if (!stillInContinent) setSelectedCuisine('')
+    setPage(1)
+  }
+
+  const handleCuisineChange = (cuisine) => {
+    setSelectedCuisine(cuisine || '')
+    setPage(1)
   }
 
   return (
@@ -112,9 +129,9 @@ export default function MapPage() {
                   <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-stone-500">
                     Cuisine
                   </label>
-                  <select
+                    <select
                     value={selectedCuisine}
-                    onChange={(e) => setSelectedCuisine(e.target.value || '')}
+                    onChange={(e) => handleCuisineChange(e.target.value || '')}
                     disabled={!selectedContinent}
                     className="w-full rounded-lg border border-stone-200 bg-stone-50 px-3 py-2.5 text-sm text-stone-800 focus:border-tomato-400 focus:outline-none focus:ring-2 focus:ring-tomato-400/20 disabled:opacity-50"
                   >
@@ -148,11 +165,39 @@ export default function MapPage() {
                     No recipes found for this cuisine.
                   </p>
                 ) : (
-                  <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                    {recipes.map((recipe) => (
-                      <FeedCard key={recipe.id} recipe={recipe} />
-                    ))}
-                  </div>
+                  <>
+                    <p className="mb-4 text-sm text-stone-500">
+                      {totalResults} recipe{totalResults !== 1 ? 's' : ''} found
+                    </p>
+                    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                      {recipes.map((recipe) => (
+                        <FeedCard key={recipe.id} recipe={recipe} />
+                      ))}
+                    </div>
+                    {totalPages > 1 && (
+                      <div className="mt-6 flex flex-wrap items-center justify-center gap-2 border-t border-stone-200 pt-6">
+                        <button
+                          type="button"
+                          onClick={() => setPage((p) => Math.max(1, p - 1))}
+                          disabled={page <= 1}
+                          className="rounded-lg border border-stone-200 bg-white px-4 py-2 text-sm font-medium text-stone-700 shadow-sm transition hover:bg-stone-50 disabled:pointer-events-none disabled:opacity-50"
+                        >
+                          ← Previous
+                        </button>
+                        <span className="px-3 py-2 text-sm text-stone-600">
+                          Page {page} of {totalPages}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                          disabled={page >= totalPages}
+                          className="rounded-lg border border-stone-200 bg-white px-4 py-2 text-sm font-medium text-stone-700 shadow-sm transition hover:bg-stone-50 disabled:pointer-events-none disabled:opacity-50"
+                        >
+                          Next →
+                        </button>
+                      </div>
+                    )}
+                  </>
                 )}
               </>
             )}
