@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react'
 import { searchRecipes } from '../api/recipesBackend'
+import { filterAndRankRecipes } from '../utils/searchRanking'
 import { loadPreferences } from './usePreferences'
 
 const PAGE_SIZE = 20
+const FETCH_LIMIT = 100
 
 /**
  * Search recipes via recipe API (Spoonacular). Supports pagination (page, 20 per page).
@@ -33,7 +35,6 @@ export function useSearchRecipes(keyword, filters, page = 1) {
     setLoading(true)
     setError(null)
     const preferences = loadPreferences()
-    const p = Math.max(1, Number(page) || 1)
     searchRecipes({
       keyword: q,
       filters: filters || {},
@@ -45,13 +46,14 @@ export function useSearchRecipes(keyword, filters, page = 1) {
         dislikedIngredients: preferences.dislikedIngredients || [],
         allergiesToAvoid: preferences.allergiesToAvoid || [],
       },
-      limit: PAGE_SIZE,
-      offset: (p - 1) * PAGE_SIZE,
+      limit: FETCH_LIMIT,
+      offset: 0,
     })
-      .then(({ recipes: list, totalResults: total, suggestedKeyword: suggested }) => {
+      .then(({ recipes: list, suggestedKeyword: suggested }) => {
         if (!cancelled) {
-          setRecipes(list)
-          setTotalResults(total ?? list.length)
+          const ranked = filterAndRankRecipes(list || [], q, filters || {})
+          setRecipes(ranked)
+          setTotalResults(ranked.length)
           setSuggestedKeyword(suggested ?? null)
         }
       })
@@ -62,9 +64,11 @@ export function useSearchRecipes(keyword, filters, page = 1) {
         if (!cancelled) setLoading(false)
       })
     return () => { cancelled = true }
-  }, [keyword, page, prefsRevision, JSON.stringify(filters || {})])
+  }, [keyword, prefsRevision, JSON.stringify(filters || {})])
 
-  const results = (keyword || '').trim() ? recipes : []
+  const p = Math.max(1, Number(page) || 1)
+  const start = (p - 1) * PAGE_SIZE
+  const results = (keyword || '').trim() ? recipes.slice(start, start + PAGE_SIZE) : []
   const totalPages = Math.max(1, Math.ceil(totalResults / PAGE_SIZE))
-  return { results, totalResults, totalPages, page: Math.max(1, Number(page) || 1), suggestedKeyword, loading, error }
+  return { results, totalResults, totalPages, page: p, suggestedKeyword, loading, error }
 }

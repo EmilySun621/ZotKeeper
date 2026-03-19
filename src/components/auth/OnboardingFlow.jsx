@@ -4,7 +4,6 @@ import {
   DIETARY_OPTIONS,
   ALLERGY_OPTIONS,
   CUISINE_OPTIONS,
-  SPICE_OPTIONS,
   syncProfileToPreferences,
 } from '../../data/profileOptions'
 
@@ -13,7 +12,15 @@ const ONBOARDING_STEPS = [
   { id: 'dietaryRestrictions', title: 'Dietary preferences', description: "Pick any that apply. We'll avoid ingredients that don't fit.", type: 'multi', options: DIETARY_OPTIONS },
   { id: 'allergies', title: 'Allergies to avoid', description: 'Select common allergens we should exclude for you.', type: 'multi', options: ALLERGY_OPTIONS },
   { id: 'preferredCuisines', title: 'Favorite cuisines', description: 'Choose cuisines you enjoy most.', type: 'multi', options: CUISINE_OPTIONS },
-  { id: 'spiceLevel', title: 'Spice level', description: 'How spicy do you like your food?', type: 'single', options: SPICE_OPTIONS },
+  { id: 'nutritionPriorities', title: 'Nutrition priorities', description: 'Choose any to prioritize in search and feed.', type: 'multi', options: [
+    'Prefer lower-calorie recipes',
+    'Prefer higher-protein recipes',
+    'Prefer lower-carb recipes',
+  ] },
+  { id: 'budgetPreference', title: 'Budget preference', description: 'Do you want to prioritize budget-friendly recipes?', type: 'single', options: [
+    'Prefer budget-friendly recipes',
+    'No preference',
+  ] },
 ]
 
 export default function OnboardingFlow({ onDone }) {
@@ -23,7 +30,12 @@ export default function OnboardingFlow({ onDone }) {
     dietaryRestrictions: [...(user?.profile?.dietaryRestrictions || [])],
     allergies: [...(user?.profile?.allergies || [])],
     preferredCuisines: [...(user?.profile?.preferredCuisines || [])],
-    spiceLevel: user?.profile?.spiceLevel || '',
+    nutritionPriorities: [
+      ...(user?.profile?.lowCaloriePriority ? ['Prefer lower-calorie recipes'] : []),
+      ...(user?.profile?.highProteinPriority ? ['Prefer higher-protein recipes'] : []),
+      ...(user?.profile?.lowCarbPriority ? ['Prefer lower-carb recipes'] : []),
+    ],
+    budgetPreference: user?.profile?.budgetFriendlyPriority ? 'Prefer budget-friendly recipes' : 'No preference',
   }))
 
   if (!user) {
@@ -41,6 +53,8 @@ export default function OnboardingFlow({ onDone }) {
 
   const applyAnswers = () => {
     if (!user) return
+    const nutritionSet = new Set(answers.nutritionPriorities || [])
+    const budgetFriendly = answers.budgetPreference === 'Prefer budget-friendly recipes'
     const updated = {
       ...user,
       profile: {
@@ -48,12 +62,15 @@ export default function OnboardingFlow({ onDone }) {
         dietaryRestrictions: answers.dietaryRestrictions,
         allergies: answers.allergies,
         preferredCuisines: answers.preferredCuisines,
-        spiceLevel: answers.spiceLevel,
+        lowCaloriePriority: nutritionSet.has('Prefer lower-calorie recipes'),
+        highProteinPriority: nutritionSet.has('Prefer higher-protein recipes'),
+        lowCarbPriority: nutritionSet.has('Prefer lower-carb recipes'),
+        budgetFriendlyPriority: budgetFriendly,
         onboardingCompleted: true,
       },
     }
     updateUser(updated)
-    syncProfileToPreferences(updated.profile)
+    syncProfileToPreferences(updated.profile, updated.username)
   }
 
   const handleNext = () => {

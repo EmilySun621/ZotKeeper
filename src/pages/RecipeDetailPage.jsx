@@ -1,7 +1,6 @@
 import { useParams, Link } from 'react-router-dom'
 import { useRecipeById } from '../hooks/useRecipeById'
 import { useSavedRecipes } from '../hooks/useSavedRecipes'
-import WhyRecommended from '../components/recipe/WhyRecommended'
 import NutritionSummary from '../components/recipe/NutritionSummary'
 import { FALLBACK_IMAGE, handleImageError } from '../utils/imageFallback'
 
@@ -31,6 +30,16 @@ export default function RecipeDetailPage() {
   }
 
   const saved = isSaved(recipe.id)
+  const chiliKeywords = ['chili', 'chilli', 'chile', 'jalapeno', 'habanero', 'serrano', 'cayenne', 'chipotle', '辣椒']
+  const hasChili = (recipe.ingredients || []).some((ing) => {
+    const name = typeof ing === 'object' ? ing.name : ing
+    if (!name) return false
+    const lower = String(name).toLowerCase()
+    return chiliKeywords.some((k) => lower.includes(k))
+  })
+  const region = Array.isArray(recipe.cuisineTags) && recipe.cuisineTags.length > 0
+    ? recipe.cuisineTags[0]
+    : ''
 
   return (
     <article className="mx-auto max-w-3xl">
@@ -54,7 +63,17 @@ export default function RecipeDetailPage() {
       <div className="mt-6">
         <h1 className="font-display text-2xl font-bold text-stone-900 sm:text-3xl">
           {recipe.title}
+          {hasChili && (
+            <span className="ml-2 text-lg align-middle" aria-label="spicy">🌶️</span>
+          )}
         </h1>
+        {region && (
+          <div className="mt-2">
+            <span className="inline-flex items-center rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">
+              Region: {region}
+            </span>
+          </div>
+        )}
         <p className="mt-2 text-stone-600">{recipe.descriptionHook}</p>
         <div className="mt-4 flex flex-wrap gap-2 text-sm text-stone-500">
           <span>⭐ {recipe.rating}</span>
@@ -68,8 +87,6 @@ export default function RecipeDetailPage() {
           <span>Budget: {recipe.budgetLevel}</span>
         </div>
       </div>
-
-      <WhyRecommended text={recipe.recommendedReason} />
 
       <div className="mt-8 grid gap-8 sm:grid-cols-2">
         <section>
@@ -118,6 +135,7 @@ export default function RecipeDetailPage() {
           Home →
         </Link>
       </div>
+      <p className="mt-6 text-center text-xs text-stone-400">From Spoonacular</p>
     </article>
   )
 }

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { searchRecipes } from '../api/recipesBackend'
+import { rankFeedRecipes } from '../utils/feedRanking'
 import { usePreferences } from './usePreferences'
 
 const FEED_STORAGE_KEY = 'zotkeeper_feed_cache'
@@ -9,7 +10,10 @@ function getPreferenceKey(preferences) {
   const o = {
     cuisineWeights: preferences.cuisineWeights ?? {},
     dietToggles: preferences.dietToggles ?? {},
-    spiceLevel: preferences.spiceLevel ?? 2,
+    lowCaloriePriority: preferences.lowCaloriePriority ?? false,
+    highProteinPriority: preferences.highProteinPriority ?? false,
+    lowCarbPriority: preferences.lowCarbPriority ?? false,
+    budgetFriendlyPriority: preferences.budgetFriendlyPriority ?? false,
   }
   const sorted = (obj) => {
     if (obj === null || typeof obj !== 'object') return obj
@@ -77,8 +81,9 @@ export function useFeedRecipes() {
     })
       .then(({ recipes: list }) => {
         if (cancelled) return
-        saveFeedToStorage(list, prefKey)
-        setRecipes(list)
+        const ranked = rankFeedRecipes(list || [], preferences)
+        saveFeedToStorage(ranked, prefKey)
+        setRecipes(ranked)
       })
       .catch((err) => {
         if (!cancelled) setError(err?.message || 'Failed to load recipes')

@@ -11,9 +11,12 @@ function defaultProfile() {
     dietaryRestrictions: [],
     allergies: [],
     preferredCuisines: [],
-    spiceLevel: '',
     avatar: '',
     onboardingCompleted: false,
+    lowCaloriePriority: false,
+    highProteinPriority: false,
+    lowCarbPriority: false,
+    budgetFriendlyPriority: false,
   }
 }
 

@@ -4,7 +4,7 @@ import {
   BUDGET_OPTIONS,
   TIME_OPTIONS,
 } from '../../constants/preferences'
-import { DIETARY_OPTIONS, ALLERGY_OPTIONS, SPICE_OPTIONS } from '../../data/profileOptions'
+import { DIETARY_OPTIONS, ALLERGY_OPTIONS } from '../../data/profileOptions'
 import { usePreferences } from '../../hooks/usePreferences'
 
 /** Map display label to dietToggles key */
@@ -27,8 +27,6 @@ function dietKey(label) {
   return map[label] ?? label.toLowerCase().replace(/\s+/g, '-')
 }
 
-const spiceToValue = { "Can't do spicy": 0, 'Mild is okay': 2, 'Love spicy': 5 }
-
 export default function PreferenceSettingsTab() {
   const { preferences, setCuisineWeight, setDietToggle, update, addDislikedIngredient, removeDislikedIngredient } = usePreferences()
   const [dislikeInput, setDislikeInput] = useState('')
@@ -39,7 +37,17 @@ export default function PreferenceSettingsTab() {
     return () => clearTimeout(t)
   }, [showSaved])
 
-  const { cuisineWeights, dietToggles, spiceLevel, dislikedIngredients, budgetDefault, timeDefault } = preferences
+  const {
+    cuisineWeights,
+    dietToggles,
+    dislikedIngredients,
+    budgetDefault,
+    timeDefault,
+    lowCaloriePriority,
+    highProteinPriority,
+    lowCarbPriority,
+    budgetFriendlyPriority,
+  } = preferences
 
   return (
     <div className="space-y-8">
@@ -130,41 +138,6 @@ export default function PreferenceSettingsTab() {
 
       <section>
         <h3 className="mb-3 font-display text-sm font-semibold uppercase tracking-wide text-tomato-500">
-          Spice level
-        </h3>
-        <div className="flex flex-wrap gap-2 mb-3">
-          {SPICE_OPTIONS.map((label) => {
-            const value = spiceToValue[label]
-            const on = (spiceLevel ?? 2) === value
-            return (
-              <button
-                key={label}
-                type="button"
-                onClick={() => update({ spiceLevel: value })}
-                className={`rounded-full px-4 py-2 text-sm font-medium transition ${
-                  on ? 'bg-tomato-500 text-stone-800' : 'bg-white text-stone-500 hover:bg-stone-50'
-                }`}
-              >
-                {label}
-              </button>
-            )
-          })}
-        </div>
-        <div className="flex items-center gap-4">
-          <input
-            type="range"
-            min="0"
-            max="5"
-            value={spiceLevel ?? 2}
-            onChange={(e) => update({ spiceLevel: Number(e.target.value) })}
-            className="h-3 w-40 accent-tomato-500"
-          />
-          <span className="text-sm font-medium text-stone-700">{spiceLevel ?? 2}</span>
-        </div>
-      </section>
-
-      <section>
-        <h3 className="mb-3 font-display text-sm font-semibold uppercase tracking-wide text-tomato-500">
           Default budget & time
         </h3>
         <div className="flex flex-wrap gap-4">
@@ -176,7 +149,7 @@ export default function PreferenceSettingsTab() {
               className="rounded-lg border border-stone-200 bg-stone-100 px-3 py-2 text-sm"
             >
               {BUDGET_OPTIONS.map((o) => (
-                <option key={o} value={o}>{o}</option>
+                <option key={o} value={o}>{o.charAt(0).toUpperCase() + o.slice(1)}</option>
               ))}
             </select>
           </div>
@@ -193,6 +166,59 @@ export default function PreferenceSettingsTab() {
             </select>
           </div>
         </div>
+      </section>
+
+      <section>
+        <h3 className="mb-3 font-display text-sm font-semibold uppercase tracking-wide text-tomato-500">
+          Nutrition preferences
+        </h3>
+        <p className="mb-3 text-xs text-stone-500">
+          These options prioritize matching recipes; they don’t hide others.
+        </p>
+        <div className="flex flex-col gap-3 text-sm text-stone-700">
+          <label className="inline-flex items-center gap-3">
+            <input
+              type="checkbox"
+              checked={!!lowCaloriePriority}
+              onChange={(e) => update({ lowCaloriePriority: e.target.checked })}
+              className="h-4 w-4 accent-tomato-500"
+            />
+            Prefer lower-calorie recipes
+          </label>
+          <label className="inline-flex items-center gap-3">
+            <input
+              type="checkbox"
+              checked={!!highProteinPriority}
+              onChange={(e) => update({ highProteinPriority: e.target.checked })}
+              className="h-4 w-4 accent-tomato-500"
+            />
+            Prefer higher-protein recipes
+          </label>
+          <label className="inline-flex items-center gap-3">
+            <input
+              type="checkbox"
+              checked={!!lowCarbPriority}
+              onChange={(e) => update({ lowCarbPriority: e.target.checked })}
+              className="h-4 w-4 accent-tomato-500"
+            />
+            Prefer lower-carb recipes
+          </label>
+        </div>
+      </section>
+
+      <section>
+        <h3 className="mb-3 font-display text-sm font-semibold uppercase tracking-wide text-tomato-500">
+          Budget preference
+        </h3>
+        <label className="inline-flex items-center gap-3 text-sm text-stone-700">
+          <input
+            type="checkbox"
+            checked={!!budgetFriendlyPriority}
+            onChange={(e) => update({ budgetFriendlyPriority: e.target.checked })}
+            className="h-4 w-4 accent-tomato-500"
+          />
+          Prefer budget-friendly recipes
+        </label>
       </section>
 
       <section>

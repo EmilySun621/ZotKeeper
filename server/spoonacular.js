@@ -30,10 +30,18 @@ function cacheSet(key, data) {
   cache.set(key, { data, expires: Date.now() + CACHE_TTL_MS })
 }
 
-function stripHtml(html) {
+function stripHtml(html, maxLen = 300) {
   if (!html || typeof html !== 'string') return ''
-  return html.replace(/<[^>]*>/g, '').trim().slice(0, 300)
+  const text = html.replace(/<[^>]*>/g, '').trim()
+  if (maxLen == null) return text
+  return text.slice(0, maxLen)
 }
+
+function normalizeDietTag(tag) {
+  if (!tag || typeof tag !== 'string') return null
+  return tag.trim().toLowerCase().replace(/\s+/g, '-')
+}
+
 
 /** Parse raw instructions string into steps array (fallback when analyzedInstructions missing). */
 function instructionsToSteps(str) {
@@ -50,7 +58,11 @@ function instructionsToSteps(str) {
 function mapFromSearch(r) {
   const nutrients = r.nutrition?.nutrients || []
   const caloriesNut = nutrients.find((n) => n.name === 'Calories')
+  const proteinNut = nutrients.find((n) => n.name === 'Protein')
+  const carbsNut = nutrients.find((n) => n.name === 'Carbohydrates')
   const calories = caloriesNut ? Math.round(caloriesNut.amount) : null
+  const protein = proteinNut ? Math.round(proteinNut.amount) : null
+  const carbs = carbsNut ? Math.round(carbsNut.amount) : null
   const fromAnalyzed = (r.analyzedInstructions?.[0]?.steps || []).map((s) => s.step || '')
   const steps = fromAnalyzed.length > 0 ? fromAnalyzed : instructionsToSteps(r.instructions)
   return {
@@ -59,11 +71,16 @@ function mapFromSearch(r) {
     image: r.image || `https://img.spoonacular.com/recipes/${r.id}-312x231.jpg`,
     descriptionHook: stripHtml(r.summary) || r.title || '',
     cuisineTags: Array.isArray(r.cuisines) ? r.cuisines : [],
-    dietTags: Array.isArray(r.diets) ? r.diets : [],
+    dietTags: Array.isArray(r.diets)
+      ? r.diets.map(normalizeDietTag).filter(Boolean)
+      : [],
     timeMinutes: r.readyInMinutes ?? 30,
     difficulty: (r.readyInMinutes ?? 60) <= 30 ? 'easy' : (r.readyInMinutes ?? 60) <= 60 ? 'medium' : 'hard',
     budgetLevel: r.cheap ? 'low' : 'medium',
     calories,
+    protein,
+    carbs,
+    pricePerServing: r.pricePerServing ?? null,
     rating: r.spoonacularScore != null ? Math.round((r.spoonacularScore / 20) * 10) / 10 : 4,
     ingredients: (r.extendedIngredients || []).map((i) => ({
       name: i.originalName || i.name || '',
@@ -86,6 +103,8 @@ function mapFromDetail(r) {
   const protein = getN('Protein')
   const carbs = getN('Carbohydrates')
   const fat = getN('Fat')
+  const proteinVal = protein ? Math.round(protein.amount) : null
+  const carbsVal = carbs ? Math.round(carbs.amount) : null
   const steps = (r.analyzedInstructions?.[0]?.steps || []).map((s) => s.step || '')
   const ingredients = (r.extendedIngredients || []).map((i) => ({
     name: i.originalName || i.name || '',
@@ -95,13 +114,18 @@ function mapFromDetail(r) {
     id: String(r.id),
     title: r.title || 'Untitled',
     image: r.image || `https://img.spoonacular.com/recipes/${r.id}-556x370.jpg`,
-    descriptionHook: stripHtml(r.summary) || r.title || '',
+    descriptionHook: stripHtml(r.summary, null) || r.title || '',
     cuisineTags: Array.isArray(r.cuisines) ? r.cuisines : [],
-    dietTags: Array.isArray(r.diets) ? r.diets : [],
+    dietTags: Array.isArray(r.diets)
+      ? r.diets.map(normalizeDietTag).filter(Boolean)
+      : [],
     timeMinutes: r.readyInMinutes ?? 30,
     difficulty: (r.readyInMinutes ?? 60) <= 30 ? 'easy' : (r.readyInMinutes ?? 60) <= 60 ? 'medium' : 'hard',
     budgetLevel: r.cheap ? 'low' : 'medium',
     calories: cal ? Math.round(cal.amount) : null,
+    protein: proteinVal,
+    carbs: carbsVal,
+    pricePerServing: r.pricePerServing ?? null,
     rating: r.spoonacularScore != null ? Math.round((r.spoonacularScore / 20) * 10) / 10 : 4,
     ingredients,
     steps,
@@ -111,8 +135,8 @@ function mapFromDetail(r) {
     nutrition: (cal || protein || carbs || fat)
       ? {
           calories: cal ? Math.round(cal.amount) : null,
-          protein: protein ? Math.round(protein.amount) : null,
-          carbs: carbs ? Math.round(carbs.amount) : null,
+          protein: proteinVal,
+          carbs: carbsVal,
           fat: fat ? Math.round(fat.amount) : null,
         }
       : undefined,
@@ -141,6 +165,18 @@ export async function searchRecipes(params) {
   if (params.type && params.type.trim()) searchParams.set('type', params.type.trim())
   if (params.maxReadyTime != null && params.maxReadyTime > 0) searchParams.set('maxReadyTime', String(params.maxReadyTime))
   if (params.sort && params.sort.trim()) searchParams.set('sort', params.sort.trim())
+  if (params.includeIngredients) {
+    const include = Array.isArray(params.includeIngredients)
+      ? params.includeIngredients.join(',')
+      : String(params.includeIngredients)
+    if (include.trim()) searchParams.set('includeIngredients', include.trim())
+  }
+  if (params.excludeIngredients) {
+    const exclude = Array.isArray(params.excludeIngredients)
+      ? params.excludeIngredients.join(',')
+      : String(params.excludeIngredients)
+    if (exclude.trim()) searchParams.set('excludeIngredients', exclude.trim())
+  }
   if (params.minCalories != null) searchParams.set('minCalories', String(params.minCalories))
   if (params.maxCalories != null) searchParams.set('maxCalories', String(params.maxCalories))
 

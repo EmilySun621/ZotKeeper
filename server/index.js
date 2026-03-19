@@ -67,6 +67,16 @@ function maxReadyFromFilter(time) {
   return null
 }
 
+function normalizeList(value) {
+  if (!value) return []
+  if (Array.isArray(value)) return value
+  if (typeof value === 'string') {
+    return value.split(',').map((s) => s.trim()).filter(Boolean)
+  }
+  return []
+}
+
+
 /**
  * POST /api/search
  * Body: { keyword, filters: { cuisines[], diets[], time, caloriesMin, caloriesMax, ... }, preferences, limit }
@@ -84,6 +94,14 @@ app.post('/api/search', async (req, res) => {
 
     const minCal = filters.caloriesMin ?? filters.calories_min
     const maxCal = filters.caloriesMax ?? filters.calories_max
+    const includeIngredient = filters.includeIngredient ?? filters.include_ingredient
+    const excludeFromFilters = normalizeList(filters.excludeIngredients ?? filters.exclude_ingredients)
+    const excludeFromAllergens = normalizeList(filters.excludeAllergens ?? filters.exclude_allergens)
+    const excludeFromPrefs = normalizeList(preferences.disliked_ingredients ?? preferences.dislikedIngredients)
+    const excludeIngredients = [...excludeFromFilters, ...excludeFromAllergens, ...excludeFromPrefs]
+      .map((s) => String(s).trim().toLowerCase())
+      .filter(Boolean)
+    const excludeCsv = excludeIngredients.length ? [...new Set(excludeIngredients)].join(',') : ''
     const off = Math.max(0, Number(offset) || 0)
     const limitNum = Math.min(100, Math.max(1, Number(limit) || SEARCH_PAGE_SIZE))
 
@@ -94,6 +112,10 @@ app.post('/api/search', async (req, res) => {
       maxReadyTime: maxReadyTime && maxReadyTime < 999 ? maxReadyTime : undefined,
       minCalories: minCal != null && minCal !== '' ? Number(minCal) : undefined,
       maxCalories: maxCal != null && maxCal !== '' ? Number(maxCal) : undefined,
+      includeIngredients: includeIngredient && String(includeIngredient).trim()
+        ? String(includeIngredient).trim().toLowerCase()
+        : undefined,
+      excludeIngredients: excludeCsv || undefined,
       sort: q ? 'popularity' : 'random',
     }
 

@@ -1,6 +1,19 @@
 import { DEFAULT_PREFERENCES } from '../constants/preferences'
 
-const PREF_STORAGE_KEY = 'zotkeeper_preferences'
+const PREF_STORAGE_KEY_PREFIX = 'zotkeeper_preferences'
+const CURRENT_USER_KEY = 'cooking_app_current_user'
+
+function getPreferenceKey(username) {
+  return username ? `${PREF_STORAGE_KEY_PREFIX}:${username}` : PREF_STORAGE_KEY_PREFIX
+}
+
+function getCurrentUsername() {
+  try {
+    return localStorage.getItem(CURRENT_USER_KEY) || ''
+  } catch (_) {
+    return ''
+  }
+}
 
 /** Options for profile "About you" and onboarding (same source of truth) */
 export const DIETARY_OPTIONS = [
@@ -18,27 +31,27 @@ export const CUISINE_OPTIONS = [
   'Mexican', 'Mediterranean', 'French', 'American', 'Middle Eastern', 'Spanish',
 ]
 
-export const SPICE_OPTIONS = ["Can't do spicy", 'Mild is okay', 'Love spicy']
-
 const dietToToggle = {
   Vegetarian: 'vegetarian',
   Vegan: 'vegan',
-  'Gluten-free': 'gluten-free',
-  'Dairy-free': 'dairy-free',
+  Pescatarian: 'pescatarian',
+  'No red meat': 'no-red-meat',
+  'No pork': 'no-pork',
+  'No beef': 'no-beef',
+  'No seafood': 'no-seafood',
   Halal: 'halal',
   Kosher: 'kosher',
-}
-
-const spiceToLevel = {
-  "Can't do spicy": 0,
-  'Mild is okay': 2,
-  'Love spicy': 5,
+  'Gluten-free': 'gluten-free',
+  'Dairy-free': 'dairy-free',
+  'Low carb': 'low-carb',
+  'Low sugar': 'low-sugar',
 }
 
 /** Sync user profile (about you) to zotkeeper_preferences for search/feed */
-export function syncProfileToPreferences(profile) {
+export function syncProfileToPreferences(profile, username) {
   try {
-    const raw = localStorage.getItem(PREF_STORAGE_KEY)
+    const key = getPreferenceKey(username || getCurrentUsername())
+    const raw = localStorage.getItem(key)
     const prefs = raw ? { ...DEFAULT_PREFERENCES, ...JSON.parse(raw) } : { ...DEFAULT_PREFERENCES }
     const dietToggles = { ...prefs.dietToggles }
     for (const d of profile.dietaryRestrictions || []) {
@@ -50,13 +63,19 @@ export function syncProfileToPreferences(profile) {
       cuisineWeights[c] = 4
     }
     prefs.cuisineWeights = cuisineWeights
-    prefs.spiceLevel = spiceToLevel[profile.spiceLevel] ?? 2
     const disliked = [...(prefs.dislikedIngredients || [])]
     for (const a of profile.allergies || []) {
       const low = a.trim().toLowerCase()
       if (low && !disliked.includes(low)) disliked.push(low)
     }
     prefs.dislikedIngredients = disliked
-    localStorage.setItem(PREF_STORAGE_KEY, JSON.stringify(prefs))
+    prefs.lowCaloriePriority = !!profile.lowCaloriePriority
+    prefs.highProteinPriority = !!profile.highProteinPriority
+    prefs.lowCarbPriority = !!profile.lowCarbPriority
+    prefs.budgetFriendlyPriority = !!profile.budgetFriendlyPriority
+    localStorage.setItem(key, JSON.stringify(prefs))
+    if (key !== PREF_STORAGE_KEY_PREFIX) {
+      localStorage.removeItem(PREF_STORAGE_KEY_PREFIX)
+    }
   } catch (_) {}
 }

@@ -9,6 +9,100 @@ import { loadPreferences } from '../hooks/usePreferences'
 
 const FIELD_WEIGHTS = { title: 20, ingredient: 12, description: 5, steps: 2 }
 
+function normalizeDietTag(tag) {
+  if (!tag || typeof tag !== 'string') return ''
+  return tag.trim().toLowerCase().replace(/\s+/g, '-')
+}
+
+function normalizeDietKey(tag) {
+  const norm = normalizeDietTag(tag)
+  if (norm === 'pescatarian') return 'pescetarian'
+  return norm
+}
+
+const MEAT_KEYWORDS = ['beef', 'pork', 'lamb', 'mutton', 'veal', 'bacon', 'ham', 'prosciutto', 'pancetta', 'sausage', 'salami', 'pepperoni', 'chorizo', 'steak']
+const POULTRY_KEYWORDS = ['chicken', 'turkey', 'duck', 'goose', 'poultry']
+const SEAFOOD_KEYWORDS = ['fish', 'salmon', 'tuna', 'shrimp', 'prawn', 'crab', 'lobster', 'scallop', 'anchovy', 'sardine', 'tilapia', 'cod', 'mackerel', 'trout', 'clam', 'mussel', 'oyster', 'squid', 'octopus']
+const DAIRY_KEYWORDS = ['milk', 'cheese', 'butter', 'cream', 'yogurt', 'ghee', 'whey', 'casein']
+const EGG_KEYWORDS = ['egg', 'eggs', 'egg white', 'egg whites', 'egg yolk', 'egg yolks']
+const GLUTEN_KEYWORDS = ['wheat', 'flour', 'bread', 'pasta', 'noodle', 'noodles', 'barley', 'rye', 'gluten', 'couscous', 'semolina', 'soy sauce', 'seitan', 'cracker']
+const LOW_CARB_KEYWORDS = ['bread', 'pasta', 'rice', 'noodle', 'noodles', 'flour', 'sugar', 'potato', 'potatoes', 'corn', 'tortilla', 'cereal', 'cake', 'cookie']
+const LOW_SUGAR_KEYWORDS = ['sugar', 'honey', 'syrup', 'molasses', 'jam', 'jelly', 'candy', 'chocolate', 'sweetener']
+const ALCOHOL_KEYWORDS = ['wine', 'beer', 'whiskey', 'vodka', 'rum', 'gin', 'brandy', 'liquor', 'sake']
+
+const LOW_CALORIE_MAX = 450
+const HIGH_PROTEIN_MIN = 20
+const LOW_CARB_MAX = 30
+const BUDGET_FRIENDLY_MAX_PRICE = 400
+
+const DIET_EXCLUDE_KEYWORDS = {
+  vegan: [...MEAT_KEYWORDS, ...POULTRY_KEYWORDS, ...SEAFOOD_KEYWORDS, ...DAIRY_KEYWORDS, ...EGG_KEYWORDS, 'honey', 'gelatin'],
+  vegetarian: [...MEAT_KEYWORDS, ...POULTRY_KEYWORDS, ...SEAFOOD_KEYWORDS, 'gelatin'],
+  pescetarian: [...MEAT_KEYWORDS, ...POULTRY_KEYWORDS],
+  'no-red-meat': ['beef', 'pork', 'lamb', 'mutton', 'veal', 'bacon', 'ham'],
+  'no-beef': ['beef', 'steak', 'veal'],
+  'no-pork': ['pork', 'bacon', 'ham', 'prosciutto', 'pancetta', 'sausage'],
+  'no-seafood': [...SEAFOOD_KEYWORDS],
+  halal: ['pork', 'bacon', 'ham', 'lard', ...ALCOHOL_KEYWORDS],
+  kosher: ['pork', 'bacon', 'ham', 'lard', 'shrimp', 'crab', 'lobster', 'clam', 'mussel', 'oyster'],
+  'gluten-free': [...GLUTEN_KEYWORDS],
+  'dairy-free': [...DAIRY_KEYWORDS],
+  'low-carb': [...LOW_CARB_KEYWORDS],
+  'low-sugar': [...LOW_SUGAR_KEYWORDS],
+}
+
+function tokenize(text) {
+  return text.match(/[a-z]+/g) || []
+}
+
+function hasKeyword(text, keywords) {
+  if (!text) return false
+  const lower = text.toLowerCase()
+  const tokens = new Set(tokenize(lower))
+  for (const keyword of keywords) {
+    if (!keyword) continue
+    const k = String(keyword).toLowerCase()
+    if (k.includes(' ')) {
+      if (lower.includes(k)) return true
+      continue
+    }
+    if (tokens.has(k) || tokens.has(`${k}s`)) return true
+  }
+  return false
+}
+
+function buildSearchText(recipe) {
+  const parts = [
+    recipe.title,
+    recipe.descriptionHook,
+    ...(recipe.ingredients || []).map((i) => (typeof i === 'object' ? i.name : i)),
+    ...(recipe.steps || []),
+  ]
+  return parts.filter(Boolean).join(' ').toLowerCase()
+}
+
+function isLowCalorie(calories) {
+  if (calories == null || Number.isNaN(Number(calories))) return false
+  return Number(calories) <= LOW_CALORIE_MAX
+}
+
+function isHighProtein(protein) {
+  if (protein == null || Number.isNaN(Number(protein))) return false
+  return Number(protein) >= HIGH_PROTEIN_MIN
+}
+
+function isLowCarb(carbs) {
+  if (carbs == null || Number.isNaN(Number(carbs))) return false
+  return Number(carbs) <= LOW_CARB_MAX
+}
+
+function isBudgetFriendly(recipe) {
+  if (!recipe) return false
+  if (recipe.budgetLevel === 'low') return true
+  if (recipe.pricePerServing == null || Number.isNaN(Number(recipe.pricePerServing))) return false
+  return Number(recipe.pricePerServing) <= BUDGET_FRIENDLY_MAX_PRICE
+}
+
 /** Exported for use in useSearchRecipes when merging area-based results. */
 export function recipeMatchesKeyword(recipe, query) {
   if (!query || !query.trim()) return true
@@ -83,20 +177,35 @@ function preferenceScore(recipe, preferences) {
     dietToggles = {},
     budgetDefault,
     timeDefault,
+    lowCaloriePriority,
+    highProteinPriority,
+    lowCarbPriority,
+    budgetFriendlyPriority,
   } = preferences
+  const dietToggleSet = new Set(
+    Object.entries(dietToggles)
+      .filter(([, on]) => !!on)
+      .map(([key]) => normalizeDietKey(key))
+      .filter(Boolean)
+  )
 
   recipe.cuisineTags?.forEach((tag) => {
     const w = getCuisineWeight(cuisineWeights, tag)
     if (w != null && w > 0) score += w * 100
   })
   recipe.dietTags?.forEach((d) => {
-    if (dietToggles[d]) score += 200
+    const key = normalizeDietKey(d)
+    if (key && dietToggleSet.has(key)) score += 200
   })
   if (budgetDefault && recipe.budgetLevel === budgetDefault) score += 50
   if (timeDefault) {
     const maxMin = getMaxMinutes(timeDefault)
     if ((recipe.timeMinutes ?? 999) <= maxMin) score += 30
   }
+  if (lowCaloriePriority && isLowCalorie(recipe.calories)) score += 80
+  if (highProteinPriority && isHighProtein(recipe.protein)) score += 60
+  if (lowCarbPriority && isLowCarb(recipe.carbs)) score += 60
+  if (budgetFriendlyPriority && isBudgetFriendly(recipe)) score += 50
   return score
 }
 
@@ -155,9 +264,21 @@ export function filterAndRankRecipes(recipes, keyword, filters) {
     includeIngredient,
     excludeIngredients: excludeFromFilters = [],
   } = filters
+  const dietPrefKeys = Object.entries(preferences.dietToggles || {})
+    .filter(([, on]) => !!on)
+    .map(([key]) => normalizeDietKey(key))
+    .filter(Boolean)
+
+  const dietFilterKeys = diets.map((d) => normalizeDietKey(d)).filter(Boolean)
+  const dietExcludeKeywords = [
+    ...dietPrefKeys.flatMap((k) => DIET_EXCLUDE_KEYWORDS[k] || []),
+    ...dietFilterKeys.flatMap((k) => DIET_EXCLUDE_KEYWORDS[k] || []),
+  ]
+
   const excludeIngredients = [
     ...excludeFromFilters,
     ...(preferences.dislikedIngredients || []),
+    ...dietExcludeKeywords,
   ]
 
   let list = recipes.filter((r) => keywordMatch(r, keyword))
@@ -168,10 +289,12 @@ export function filterAndRankRecipes(recipes, keyword, filters) {
   }
   if (budget) list = list.filter((r) => r.budgetLevel === budget)
   if (cuisines.length) list = list.filter((r) => !r.cuisineTags?.length || r.cuisineTags.some((c) => cuisines.includes(c)))
-  if (diets.length) list = list.filter((r) => !r.dietTags?.length || r.dietTags.some((d) => diets.includes(d)))
+  // Diet filters are applied as exclusion keywords to avoid dropping recipes without tags.
   if (difficulty) list = list.filter((r) => r.difficulty === difficulty)
-  if (caloriesMin != null) list = list.filter((r) => (r.calories ?? 0) >= caloriesMin)
-  if (caloriesMax != null) list = list.filter((r) => (r.calories ?? 9999) <= caloriesMax)
+  const minCal = caloriesMin === '' ? null : caloriesMin
+  const maxCal = caloriesMax === '' ? null : caloriesMax
+  if (minCal != null) list = list.filter((r) => (r.calories ?? 0) >= minCal)
+  if (maxCal != null) list = list.filter((r) => (r.calories ?? 9999) <= maxCal)
   if (includeIngredient?.trim()) {
     const ing = includeIngredient.trim().toLowerCase()
     list = list.filter((r) => {
@@ -182,9 +305,9 @@ export function filterAndRankRecipes(recipes, keyword, filters) {
   }
   if (excludeIngredients.length) {
     list = list.filter((r) => {
-      const names = (r.ingredients || []).map((i) => (typeof i === 'object' ? i.name : i).toLowerCase())
-      if (names.length === 0) return true
-      return !excludeIngredients.some((e) => names.some((n) => n.includes(e)))
+      const searchText = buildSearchText(r)
+      if (!searchText) return true
+      return !hasKeyword(searchText, excludeIngredients)
     })
   }
 
